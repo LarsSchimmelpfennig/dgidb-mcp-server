@@ -1,50 +1,68 @@
-# Building a Remote MCP Server on Cloudflare (Without Auth)
+# Interacting with the Drug Gene Interaction Database (DGIdb) via Claude Desktop
 
-This example allows you to deploy a remote MCP server that doesn't require authentication on Cloudflare Workers. 
+This guide helps scientists and researchers use the Drug Gene Interaction Database (DGIdb) through an application called Claude Desktop. This setup allows you to ask questions about drug-gene interactions in plain language and get results directly within Claude.
 
-## Get started: 
+## What is this?
 
-[![Deploy to Workers](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/cloudflare/ai/tree/main/demos/remote-mcp-authless)
+*   **DGIdb:** A comprehensive database containing information about how drugs interact with genes. It gathers data from many different sources.
+*   **MCP Server:** A piece of software that acts as a bridge. This specific server connects to the DGIdb API. "MCP" stands for Model Context Protocol, a way for AI models (like the one in Claude) to use tools.
+*   **Claude Desktop:** An application where you can interact with an AI assistant. By configuring it correctly, Claude can use this MCP Server to fetch data from DGIdb for you.
 
-This will deploy your MCP server to a URL like: `remote-mcp-server-authless.<your-account>.workers.dev/sse`
+Essentially, this server gives Claude the "tool" it needs to look up information in the DGIdb.
 
-Alternatively, you can use the command line below to get the remote MCP Server created on your local machine:
-```bash
-npm create cloudflare@latest -- my-mcp-server --template=cloudflare/ai/demos/remote-mcp-authless
-```
+## How to Use This with Claude Desktop
 
-## Customizing your MCP Server
+If this DGIdb MCP Server has been set up and deployed (e.g., by a technical colleague), you can connect your Claude Desktop application to it. This allows you to ask Claude questions like:
 
-To add your own [tools](https://developers.cloudflare.com/agents/model-context-protocol/tools/) to the MCP server, define each tool inside the `init()` method of `src/index.ts` using `this.server.tool(...)`. 
+*   "What are the interactions for the drug Imatinib?"
+*   "Find genes that interact with Dovitinib."
+*   "Show me drug attributes for Trametinib."
 
-## Connect to Cloudflare AI Playground
+Claude will then use this server to find the answers in the DGIdb and present them to you.
 
-You can connect to your MCP server from the Cloudflare AI Playground, which is a remote MCP client:
+### Configuration for Claude Desktop
 
-1. Go to https://playground.ai.cloudflare.com/
-2. Enter your deployed MCP server URL (`remote-mcp-server-authless.<your-account>.workers.dev/sse`)
-3. You can now use your MCP tools directly from the playground!
+Your Claude Desktop application needs to be told where to find this DGIdb server. This is usually done by editing a configuration file for Claude Desktop.
 
-## Connect Claude Desktop to your MCP server
+A technical user or administrator would typically handle the deployment of the server and provide you with a specific URL (web address). For example, the server might be available at an address like: `https://dgidb-mcp-server.your-organization.workers.dev/sse`.
 
-You can also connect to your remote MCP server from local MCP clients, by using the [mcp-remote proxy](https://www.npmjs.com/package/mcp-remote). 
-
-To connect to your MCP server from Claude Desktop, follow [Anthropic's Quickstart](https://modelcontextprotocol.io/quickstart/user) and within Claude Desktop go to Settings > Developer > Edit Config.
-
-Update with this configuration:
+The configuration in Claude Desktop would then look something like this. You would add the "dgidb" section within the `mcpServers` part of your Claude Desktop configuration file:
 
 ```json
 {
   "mcpServers": {
-    "calculator": {
+    // ... (other server configurations might be here) ...
+
+    "dgidb": {
       "command": "npx",
       "args": [
         "mcp-remote",
-        "http://localhost:8787/sse"  // or remote-mcp-server-authless.your-account.workers.dev/sse
+        "https://dgidb-mcp-server.quentincody.workers.dev/sse" // <-- This URL needs to be the actual address of YOUR deployed DGIdb MCP server
       ]
     }
+
+    // ... (other server configurations might be here) ...
   }
 }
 ```
 
-Restart Claude and you should see the tools become available. 
+**Important:**
+*   The URL `https://dgidb-mcp-server.quentincody.workers.dev/sse` in the example above is illustrative. You will need to replace it with the actual URL where *your* instance of the DGIdb MCP server is running.
+*   After updating the configuration, you usually need to restart Claude Desktop for the changes to take effect.
+
+Once configured, the DGIdb tool should become available within Claude, allowing you to query the database easily.
+
+## For Technical Users: Deploying the Server
+
+If you are a technical user and need to deploy this server (e.g., on Cloudflare Workers):
+
+1.  **Get Started:**
+    You can deploy this server to Cloudflare Workers. Refer to the original, more technical README for deployment buttons and command-line instructions (often involving `npm create cloudflare@latest`).
+
+2.  **Customization:**
+    The server code is in `src/index.ts`. This file defines how the server connects to DGIdb and what "tools" it provides to MCP clients.
+
+3.  **Connecting to Other Clients (like AI Playground):**
+    Once deployed, you can also connect to your MCP server from other clients like the Cloudflare AI Playground by providing its URL (e.g., `https://your-dgidb-server-name.your-account.workers.dev/sse`).
+
+This DGIdb MCP Server uses the publicly available DGIdb GraphQL API at `https://dgidb.org/api/graphql`.
