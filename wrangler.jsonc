@@ -12,6 +12,10 @@
 		{
 			"new_sqlite_classes": ["MyMCP"],
 			"tag": "v1"
+		},
+		{
+			"tag": "v2-json-to-sql-do",
+			"new_sqlite_classes": ["JsonToSqlDO"]
 		}
 	],
 	"durable_objects": {
@@ -19,6 +23,10 @@
 			{
 				"class_name": "MyMCP",
 				"name": "MCP_OBJECT"
+			},
+			{
+				"name": "JSON_TO_SQL_DO",
+				"class_name": "JsonToSqlDO"
 			}
 		]
 	},
