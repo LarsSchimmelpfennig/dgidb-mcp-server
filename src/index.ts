@@ -201,7 +201,7 @@ export class DGIdbMCP extends McpAgent {
 	// DURABLE OBJECT INTEGRATION - Reusable methods
 	// ========================================
 	private async stageDataInDurableObject(graphqlResult: any): Promise<any> {
-		const env = getGlobalEnvironment();
+		const env = this.env as Env;
 		if (!env?.JSON_TO_SQL_DO) {
 			throw new Error("JSON_TO_SQL_DO binding not available in environment. Check Cloudflare worker configuration (e.g., wrangler.toml).");
 		}
@@ -232,7 +232,7 @@ export class DGIdbMCP extends McpAgent {
 	}
 
 	private async executeSQLQuery(dataAccessId: string, sql: string): Promise<any> {
-		const env = getGlobalEnvironment();
+		const env = this.env as Env;
 		if (!env?.JSON_TO_SQL_DO) {
 			throw new Error("JSON_TO_SQL_DO binding not available in environment. Check Cloudflare worker configuration (e.g., wrangler.toml).");
 		}
@@ -300,6 +300,19 @@ export default {
 		const url = new URL(request.url);
 		setGlobalEnvironment(env); // Make environment (including DO binding) accessible globally within this request context
 
+		// Debug endpoint to check environment bindings
+		if (url.pathname === "/debug") {
+			const envInfo = {
+				hasJSONToSQLDO: !!env.JSON_TO_SQL_DO,
+				globalEnv: !!getGlobalEnvironment(),
+				globalEnvHasBinding: !!getGlobalEnvironment()?.JSON_TO_SQL_DO,
+				envKeys: Object.keys(env)
+			};
+			return new Response(JSON.stringify(envInfo, null, 2), {
+				headers: { "Content-Type": "application/json" }
+			});
+		}
+
 		if (url.pathname === "/sse" || url.pathname.startsWith("/sse/")) {
 			// @ts-ignore - Assuming McpAgent or SDK provides serveSSE and it handles its own instance creation
 			return DGIdbMCP.serveSSE("/sse").fetch(request, env, ctx);
@@ -307,7 +320,7 @@ export default {
 		
 		console.log(`${API_CONFIG.name} - Requested path ${url.pathname} not found. MCP Server listening for SSE on /sse.`);
 		return new Response(
-			`${API_CONFIG.name} - MCP Server. Path not found.\nAvailable MCP paths:\n- /sse (for Server-Sent Events transport)`, 
+			`${API_CONFIG.name} - MCP Server. Path not found.\nAvailable MCP paths:\n- /sse (for Server-Sent Events transport)\n- /debug (for environment debugging)`, 
 			{ status: 404, headers: { "Content-Type": "text/plain" } }
 		);
 	},
