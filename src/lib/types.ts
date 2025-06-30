@@ -1,3 +1,8 @@
+/**
+ * Core types for DGIdb MCP Server
+ * Updated for MCP Protocol 2025-06-18 specification compliance
+ */
+
 export interface TableSchema {
     columns: Record<string, string>;
     sample_data: any[];
@@ -6,6 +11,8 @@ export interface TableSchema {
         created_at?: string;
         row_count?: number;
         last_updated?: string;
+        operation_type?: "read-only" | "data_processing" | "schema_modification";
+        mcp_protocol_version?: string;
     };
 }
 
@@ -17,6 +24,7 @@ export interface RelationshipInfo {
     _meta?: {
         strength?: number;
         confidence?: number;
+        analysis_timestamp?: string;
     };
 }
 
@@ -31,6 +39,9 @@ export interface ProcessingResult {
         processing_time_ms?: number;
         memory_usage?: number;
         optimization_hints?: string[];
+        operation_type?: "read-only" | "data_processing" | "schema_modification";
+        protocol_version?: string;
+        timestamp?: string;
     };
 }
 
@@ -43,6 +54,7 @@ export interface SchemaInfo {
         inferred_at?: string;
         quality_score?: number;
         data_types_confidence?: Record<string, number>;
+        operation_type?: "read-only" | "data_processing" | "schema_modification";
     };
 }
 
@@ -58,6 +70,7 @@ export interface PaginationInfo {
         estimated_total?: number;
         query_cost?: number;
         rate_limit_remaining?: number;
+        analysis_timestamp?: string;
     };
 }
 
@@ -69,5 +82,7 @@ export interface EntityContext {
     _meta?: {
         context_depth?: number;
         entity_confidence?: number;
+        operation_type?: "read-only" | "data_processing";
+        protocol_compliance?: string;
     };
 } 

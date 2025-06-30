@@ -81,7 +81,9 @@ export class DGIdbMCP extends McpAgent {
 							isError: false,
 							_meta: {
 								progress: 1.0,
-								statusMessage: "GraphQL query executed successfully"
+								statusMessage: "GraphQL query executed successfully",
+								operation_type: "read-only",
+								query_type: this.isIntrospectionQuery(query) ? "introspection" : "data_query"
 							},
 							resourceLinks: [{
 								uri: API_CONFIG.endpoint,
@@ -99,7 +101,9 @@ export class DGIdbMCP extends McpAgent {
 						isError: false,
 						_meta: {
 							progress: 1.0,
-							statusMessage: "Data staged successfully for SQL querying"
+							statusMessage: "Data staged successfully for SQL querying",
+							operation_type: "data_processing",
+							data_access_id: stagingResult.data_access_id
 						},
 						resourceLinks: [{
 							uri: API_CONFIG.endpoint,
@@ -134,7 +138,10 @@ export class DGIdbMCP extends McpAgent {
 						isError: false,
 						_meta: {
 							progress: 1.0,
-							statusMessage: `SQL query executed successfully, returned ${queryResult.results?.length || 0} rows`
+							statusMessage: `SQL query executed successfully, returned ${queryResult.results?.length || 0} rows`,
+							operation_type: "read-only",
+							query_complexity: queryResult.complexity_score,
+							data_access_id: data_access_id
 						},
 						resourceLinks: [{
 							uri: "https://dgidb.org/",
@@ -366,22 +373,35 @@ export class DGIdbMCP extends McpAgent {
 	}
 
 	// ========================================
-	// ERROR HANDLING - Reusable
+	// ERROR HANDLING - Enhanced for MCP 2025-06-18
 	// ========================================
 	private createErrorResponse(message: string, error: unknown) {
+		const errorDetails = error instanceof Error ? error.message : String(error);
+		const timestamp = new Date().toISOString();
+		
 		return {
 			content: [{
 				type: "text" as const,
 				text: JSON.stringify({
 					success: false,
 					error: message,
-					details: error instanceof Error ? error.message : String(error)
+					details: errorDetails,
+					timestamp,
+					help: "Check the DGIdb API documentation for valid query formats and parameters"
 				}, null, 2)
 			}],
 			isError: true,
 			_meta: {
 				progress: 0.0,
-				statusMessage: message
+				statusMessage: message,
+				error_code: "EXECUTION_FAILED",
+				error_category: error instanceof Error && error.name ? error.name : "UnknownError",
+				timestamp,
+				recovery_suggestions: [
+					"Verify your GraphQL query syntax",
+					"Check that all required variables are provided",
+					"Ensure the DGIdb API is accessible"
+				]
 			},
 			resourceLinks: [{
 				uri: "https://dgidb.org/",
@@ -389,6 +409,9 @@ export class DGIdbMCP extends McpAgent {
 			}, {
 				uri: "https://dgidb.org/api",
 				description: "DGIdb API documentation"
+			}, {
+				uri: API_CONFIG.endpoint,
+				description: "DGIdb GraphQL API endpoint"
 			}]
 		};
 	}
@@ -412,11 +435,27 @@ export default {
 	async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
 		const url = new URL(request.url);
 
-		// Standard MCP headers for all responses
+		// Standard MCP headers for all responses with enhanced security
 		const standardHeaders = {
 			"Content-Type": "application/json",
-			"MCP-Protocol-Version": "2025-06-18"
+			"MCP-Protocol-Version": "2025-06-18",
+			"X-Content-Type-Options": "nosniff",
+			"X-Frame-Options": "DENY",
+			"Referrer-Policy": "strict-origin-when-cross-origin"
 		};
+
+		// Validate MCP protocol version in requests (required by 2025-06-18 spec)
+		const clientProtocolVersion = request.headers.get("MCP-Protocol-Version");
+		if (clientProtocolVersion && !["2025-06-18", "2025-03-26"].includes(clientProtocolVersion)) {
+			return new Response(JSON.stringify({
+				error: "Unsupported MCP protocol version",
+				supported_versions: ["2025-06-18", "2025-03-26"],
+				client_version: clientProtocolVersion
+			}), {
+				status: 400,
+				headers: standardHeaders
+			});
+		}
 
 		if (url.pathname === "/sse" || url.pathname.startsWith("/sse/")) {
 			// @ts-ignore - SSE transport handling
@@ -492,6 +531,72 @@ export default {
 			const resp = await stub.fetch("http://do/chunking-analysis");
 			return new Response(await resp.text(), {
 				status: resp.status,
+				headers: standardHeaders
+			});
+		}
+
+		// MCP capabilities endpoint (2025-06-18 spec)
+		if (url.pathname === "/capabilities" && request.method === "GET") {
+			const capabilities = {
+				protocol_version: "2025-06-18",
+				server_info: {
+					name: API_CONFIG.name,
+					version: API_CONFIG.version,
+					description: API_CONFIG.description
+				},
+				capabilities: {
+					tools: {
+						supported: true,
+						list_changed: false
+					},
+					resources: {
+						supported: false
+					},
+					prompts: {
+						supported: false
+					},
+					completion: {
+						supported: false
+					},
+					experimental: {
+						streamable_http: true,
+						structured_output: true,
+						resource_links: true
+					}
+				},
+				available_tools: [
+					{
+						name: API_CONFIG.tools.graphql.name,
+						title: API_CONFIG.tools.graphql.title,
+						description: API_CONFIG.tools.graphql.description,
+						input_schema: {
+							type: "object",
+							properties: {
+								query: { type: "string", description: "GraphQL query string" },
+								variables: { type: "object", description: "Optional variables for the GraphQL query" }
+							},
+							required: ["query"]
+						}
+					},
+					{
+						name: API_CONFIG.tools.sql.name,
+						title: API_CONFIG.tools.sql.title,
+						description: API_CONFIG.tools.sql.description,
+						input_schema: {
+							type: "object",
+							properties: {
+								data_access_id: { type: "string", description: "Data access ID from the GraphQL query tool" },
+								sql: { type: "string", description: "SQL SELECT query to execute" },
+								params: { type: "array", items: { type: "string" }, description: "Optional query parameters" },
+								include_quality_analysis: { type: "boolean", description: "Include data quality analysis in response" }
+							},
+							required: ["data_access_id", "sql"]
+						}
+					}
+				]
+			};
+			
+			return new Response(JSON.stringify(capabilities, null, 2), {
 				headers: standardHeaders
 			});
 		}
