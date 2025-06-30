@@ -159,11 +159,28 @@ export class DataInsertionEngine {
 			
 			// Get the last inserted row ID only if the insert succeeded
 			if (result.changes > 0) {
-				insertedId = sql.exec(`SELECT last_insert_rowid() as id`).one()?.id || null;
+				try {
+					const lastIdResult = sql.exec(`SELECT last_insert_rowid() as id`);
+					const lastIdRows = lastIdResult.toArray();
+					if (lastIdRows.length === 1) {
+						insertedId = lastIdRows[0]?.id || null;
+					}
+				} catch (error) {
+					console.warn(`Failed to get last_insert_rowid for ${tableName}:`, error);
+					insertedId = null;
+				}
 			} else {
 				// Row already exists, find its ID
-				const existingRow = sql.exec(`SELECT rowid FROM ${tableName} WHERE ${columns.map(col => `${col} = ?`).join(' AND ')}`, ...values).one();
-				insertedId = existingRow?.rowid || null;
+				try {
+					const existingResult = sql.exec(`SELECT rowid FROM ${tableName} WHERE ${columns.map(col => `${col} = ?`).join(' AND ')} LIMIT 1`, ...values);
+					const existingRows = existingResult.toArray();
+					if (existingRows.length === 1) {
+						insertedId = existingRows[0]?.rowid || null;
+					}
+				} catch (error) {
+					console.warn(`Failed to find existing rowid for ${tableName}:`, error);
+					insertedId = null;
+				}
 			}
 		}
 		

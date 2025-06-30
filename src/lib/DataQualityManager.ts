@@ -5,6 +5,11 @@ export interface DataQualityReport {
 	dataCompleteness: DataCompletenessReport;
 	performanceMetrics: PerformanceMetrics;
 	recommendations: string[];
+	_meta?: {
+		analysis_timestamp?: string;
+		analysis_duration_ms?: number;
+		schema_version?: string;
+	};
 }
 
 export interface RelationshipIntegrityReport {
@@ -12,6 +17,10 @@ export interface RelationshipIntegrityReport {
 	populatedJunctionTables: number;
 	emptyJunctionTables: string[];
 	orphanedRecords: { table: string; count: number }[];
+	_meta?: {
+		analysis_depth?: 'basic' | 'comprehensive';
+		foreign_key_violations_checked?: number;
+	};
 }
 
 export interface DataCompletenessReport {
@@ -19,12 +28,22 @@ export interface DataCompletenessReport {
 	duplicateRecords: { table: string; count: number }[];
 	nullFields: { table: string; field: string; nullCount: number }[];
 	completenessScore: number; // 0-100
+	_meta?: {
+		tables_analyzed?: number;
+		columns_analyzed?: number;
+		analysis_coverage?: number; // percentage of schema analyzed
+	};
 }
 
 export interface PerformanceMetrics {
 	queryComplexityScore: number;
 	estimatedExecutionTime: number;
 	resourceWarnings: string[];
+	_meta?: {
+		query_pattern?: string;
+		optimization_suggestions?: string[];
+		estimated_memory_usage?: number;
+	};
 }
 
 export class DataQualityManager {
@@ -43,7 +62,13 @@ export class DataQualityManager {
 		
 		for (const junctionTable of junctionTables) {
 			try {
-				const count = sql.exec(`SELECT COUNT(*) as count FROM ${junctionTable}`).one()?.count || 0;
+				const countResult = sql.exec(`SELECT COUNT(*) as count FROM ${junctionTable}`);
+				const countRows = countResult.toArray();
+				
+				let count = 0;
+				if (countRows.length === 1) {
+					count = countRows[0]?.count || 0;
+				}
 				
 				if (count === 0) {
 					emptyJunctionTables.push(junctionTable);
@@ -55,12 +80,18 @@ export class DataQualityManager {
 					for (const fkCol of foreignKeyColumns) {
 						const baseTable = fkCol.replace('_id', '');
 						if (schemas[baseTable]) {
-							const orphanCount = sql.exec(`
+							const orphanResult = sql.exec(`
 								SELECT COUNT(*) as count 
 								FROM ${junctionTable} j 
 								WHERE j.${fkCol} IS NOT NULL 
 								AND NOT EXISTS (SELECT 1 FROM ${baseTable} b WHERE b.id = j.${fkCol})
-							`).one()?.count || 0;
+							`);
+							const orphanRows = orphanResult.toArray();
+							
+							let orphanCount = 0;
+							if (orphanRows.length === 1) {
+								orphanCount = orphanRows[0]?.count || 0;
+							}
 							
 							if (orphanCount > 0) {
 								orphanedRecords.push({ table: junctionTable, count: orphanCount });
@@ -98,12 +129,26 @@ export class DataQualityManager {
 			}
 			
 			try {
-				const tableCount = sql.exec(`SELECT COUNT(*) as count FROM ${tableName}`).one()?.count || 0;
+				const tableCountResult = sql.exec(`SELECT COUNT(*) as count FROM ${tableName}`);
+				const tableCountRows = tableCountResult.toArray();
+				
+				let tableCount = 0;
+				if (tableCountRows.length === 1) {
+					tableCount = tableCountRows[0]?.count || 0;
+				}
+				
 				totalRecords += tableCount;
 				
 				if (tableCount > 0) {
 					// Check for duplicates by comparing distinct vs total counts
-					const distinctCount = sql.exec(`SELECT COUNT(DISTINCT *) as count FROM ${tableName}`).one()?.count || 0;
+					const distinctResult = sql.exec(`SELECT COUNT(DISTINCT *) as count FROM ${tableName}`);
+					const distinctRows = distinctResult.toArray();
+					
+					let distinctCount = 0;
+					if (distinctRows.length === 1) {
+						distinctCount = distinctRows[0]?.count || 0;
+					}
+					
 					const duplicates = tableCount - distinctCount;
 					if (duplicates > 0) {
 						duplicateRecords.push({ table: tableName, count: duplicates });
@@ -113,7 +158,14 @@ export class DataQualityManager {
 					for (const columnName of Object.keys(schema.columns)) {
 						if (columnName === 'id') continue; // Skip ID columns
 						
-						const nullCount = sql.exec(`SELECT COUNT(*) as count FROM ${tableName} WHERE ${columnName} IS NULL`).one()?.count || 0;
+						const nullResult = sql.exec(`SELECT COUNT(*) as count FROM ${tableName} WHERE ${columnName} IS NULL`);
+						const nullRows = nullResult.toArray();
+						
+						let nullCount = 0;
+						if (nullRows.length === 1) {
+							nullCount = nullRows[0]?.count || 0;
+						}
+						
 						totalFields += tableCount;
 						nullFieldCount += nullCount;
 						

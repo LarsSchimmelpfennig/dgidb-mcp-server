@@ -429,23 +429,33 @@ export class ChunkingEngine {
 	 */
 	async getChunkingStats(sql: any): Promise<any> {
 		try {
-			const metadataResult = sql.exec(`
+			const metadataQuery = sql.exec(`
 				SELECT 
-					COUNT(*) as total_chunked_items,
+					COUNT(*) as total_items,
 					SUM(original_size) as total_original_size,
 					AVG(original_size) as avg_original_size,
 					SUM(total_chunks) as total_chunks,
 					COUNT(CASE WHEN compressed = 1 THEN 1 END) as compressed_items
 				FROM chunk_metadata
-			`).one();
+			`);
+			const metadataResults = metadataQuery.toArray();
+			let metadataResult: any = {};
+			if (metadataResults.length === 1) {
+				metadataResult = metadataResults[0];
+			}
 
-			const chunksResult = sql.exec(`
+			const chunksQuery = sql.exec(`
 				SELECT 
 					COUNT(*) as total_chunk_records,
 					SUM(chunk_size) as total_stored_size,
 					AVG(chunk_size) as avg_chunk_size
 				FROM content_chunks
-			`).one();
+			`);
+			const chunksResults = chunksQuery.toArray();
+			let chunksResult: any = {};
+			if (chunksResults.length === 1) {
+				chunksResult = chunksResults[0];
+			}
 
 			return {
 				metadata: metadataResult || {},
@@ -615,12 +625,15 @@ export class ChunkingEngine {
 	}
 
 	private async getMetadata(contentId: string, sql: any): Promise<ChunkMetadata | null> {
-		const result = sql.exec(
+		const query = sql.exec(
 			`SELECT * FROM chunk_metadata WHERE content_id = ?`,
 			contentId
-		).one();
+		);
+		const results = query.toArray();
 
-		if (!result) return null;
+		if (results.length !== 1) return null;
+		
+		const result = results[0];
 
 		return {
 			contentId: result.content_id,

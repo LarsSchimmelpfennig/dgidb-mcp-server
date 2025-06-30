@@ -361,11 +361,20 @@ export class JsonToSqlDO extends DurableObject {
 
 		for (const [tableName, schema] of Object.entries(schemas)) {
 			try {
-				const countResult = this.ctx.storage.sql.exec(`SELECT COUNT(*) as count FROM ${tableName}`);
-				const countRow = countResult.one();
-				const rowCount = typeof countRow?.count === 'number' ? countRow.count : 0;
+				// Validate table name before querying
+				const validatedTableName = this.validateAndFixIdentifier(tableName, 'table');
+				
+				// Use safer query execution with proper error handling
+				const countResult = this.ctx.storage.sql.exec(`SELECT COUNT(*) as count FROM ${validatedTableName}`);
+				const countRows = countResult.toArray();
+				
+				let rowCount = 0;
+				if (countRows.length === 1) {
+					const countRow = countRows[0];
+					rowCount = typeof countRow?.count === 'number' ? countRow.count : 0;
+				}
 
-				const sampleResult = this.ctx.storage.sql.exec(`SELECT * FROM ${tableName} LIMIT 3`);
+				const sampleResult = this.ctx.storage.sql.exec(`SELECT * FROM ${validatedTableName} LIMIT 3`);
 				const sampleData = sampleResult.toArray();
 
 				metadata.schemas![tableName] = {
@@ -377,8 +386,14 @@ export class JsonToSqlDO extends DurableObject {
 				metadata.total_rows! += rowCount;
 
 			} catch (error) {
-				// Continue with other tables on error
-				continue;
+				// Log the specific error for debugging but continue with other tables
+				console.warn(`Error processing table ${tableName}:`, error);
+				// Add fallback metadata for this table
+				metadata.schemas![tableName] = {
+					columns: schema.columns,
+					row_count: 0,
+					sample_data: []
+				};
 			}
 		}
 
@@ -412,9 +427,15 @@ export class JsonToSqlDO extends DurableObject {
 					// Get column information
 					const columns = this.ctx.storage.sql.exec(`PRAGMA table_info(${tableName})`).toArray();
 					
-					// Get row count
-					const countResult = this.ctx.storage.sql.exec(`SELECT COUNT(*) as count FROM ${tableName}`).one();
-					const rowCount = typeof countResult?.count === 'number' ? countResult.count : 0;
+					// Get row count with safer error handling
+					const countResult = this.ctx.storage.sql.exec(`SELECT COUNT(*) as count FROM ${tableName}`);
+					const countRows = countResult.toArray();
+					
+					let rowCount = 0;
+					if (countRows.length === 1) {
+						const countRow = countRows[0];
+						rowCount = typeof countRow?.count === 'number' ? countRow.count : 0;
+					}
 					
 					// Get sample data (first 3 rows)
 					const sampleData = this.ctx.storage.sql.exec(`SELECT * FROM ${tableName} LIMIT 3`).toArray();

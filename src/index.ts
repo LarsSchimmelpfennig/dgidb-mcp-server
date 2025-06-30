@@ -19,13 +19,16 @@ const API_CONFIG = {
 	},
 	
 	// Tool names and descriptions
+	// Note: title fields added for MCP 2025-06-18 spec support (human-friendly display names)
 	tools: {
 		graphql: {
 			name: "dgidb_graphql_query",
+			title: "DGIdb GraphQL Query",
 			description: "Executes GraphQL queries against DGIdb API, processes responses into SQLite tables, and returns metadata for subsequent SQL querying. Returns a data_access_id and schema information."
 		},
 		sql: {
-			name: "dgidb_query_sql", 
+			name: "dgidb_query_sql",
+			title: "SQL Query Executor", 
 			description: "Execute read-only SQL queries against staged data. Use the data_access_id from dgidb_graphql_query to query the SQLite tables."
 		}
 	}
@@ -74,6 +77,15 @@ export class DGIdbMCP extends McpAgent {
 							content: [{
 								type: "text" as const,
 								text: JSON.stringify(graphqlResult, null, 2)
+							}],
+							isError: false,
+							_meta: {
+								progress: 1.0,
+								statusMessage: "GraphQL query executed successfully"
+							},
+							resourceLinks: [{
+								uri: API_CONFIG.endpoint,
+								description: "DGIdb GraphQL API endpoint used for this query"
 							}]
 						};
 					}
@@ -83,6 +95,15 @@ export class DGIdbMCP extends McpAgent {
 						content: [{
 							type: "text" as const,
 							text: JSON.stringify(stagingResult, null, 2)
+						}],
+						isError: false,
+						_meta: {
+							progress: 1.0,
+							statusMessage: "Data staged successfully for SQL querying"
+						},
+						resourceLinks: [{
+							uri: API_CONFIG.endpoint,
+							description: "DGIdb GraphQL API endpoint used for this query"
 						}]
 					};
 
@@ -105,7 +126,21 @@ export class DGIdbMCP extends McpAgent {
 			async ({ data_access_id, sql, include_quality_analysis = false }) => {
 				try {
 					const queryResult = await this.executeSQLQuery(data_access_id, sql, include_quality_analysis);
-					return { content: [{ type: "text" as const, text: JSON.stringify(queryResult, null, 2) }] };
+					return { 
+						content: [{ 
+							type: "text" as const, 
+							text: JSON.stringify(queryResult, null, 2) 
+						}],
+						isError: false,
+						_meta: {
+							progress: 1.0,
+							statusMessage: `SQL query executed successfully, returned ${queryResult.results?.length || 0} rows`
+						},
+						resourceLinks: [{
+							uri: "https://dgidb.org/",
+							description: "DGIdb web interface for drug-gene interaction data"
+						}]
+					};
 				} catch (error) {
 					return this.createErrorResponse("SQL execution failed", error);
 				}
@@ -119,6 +154,7 @@ export class DGIdbMCP extends McpAgent {
 	private async executeGraphQLQuery(query: string, variables?: Record<string, any>): Promise<any> {
 		const headers = {
 			"Content-Type": "application/json",
+			"MCP-Protocol-Version": "2025-06-18",
 			...API_CONFIG.headers
 		};
 		
@@ -341,6 +377,18 @@ export class DGIdbMCP extends McpAgent {
 					error: message,
 					details: error instanceof Error ? error.message : String(error)
 				}, null, 2)
+			}],
+			isError: true,
+			_meta: {
+				progress: 0.0,
+				statusMessage: message
+			},
+			resourceLinks: [{
+				uri: "https://dgidb.org/",
+				description: "DGIdb main website"
+			}, {
+				uri: "https://dgidb.org/api",
+				description: "DGIdb API documentation"
 			}]
 		};
 	}
@@ -364,6 +412,12 @@ export default {
 	async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
 		const url = new URL(request.url);
 
+		// Standard MCP headers for all responses
+		const standardHeaders = {
+			"Content-Type": "application/json",
+			"MCP-Protocol-Version": "2025-06-18"
+		};
+
 		if (url.pathname === "/sse" || url.pathname.startsWith("/sse/")) {
 			// @ts-ignore - SSE transport handling
 			return DGIdbMCP.serveSSE("/sse").fetch(request, env, ctx);
@@ -375,7 +429,7 @@ export default {
 				...info
 			}));
 			return new Response(JSON.stringify({ datasets: list }, null, 2), {
-				headers: { "Content-Type": "application/json" }
+				headers: standardHeaders
 			});
 		}
 
@@ -384,7 +438,7 @@ export default {
 			if (!id || !datasetRegistry.has(id)) {
 				return new Response(JSON.stringify({ error: "Dataset not found" }), {
 					status: 404,
-					headers: { "Content-Type": "application/json" }
+					headers: standardHeaders
 				});
 			}
 
@@ -394,14 +448,14 @@ export default {
 			if (resp.ok) {
 				datasetRegistry.delete(id);
 				return new Response(JSON.stringify({ success: true }), {
-					headers: { "Content-Type": "application/json" }
+					headers: standardHeaders
 				});
 			}
 
 			const text = await resp.text();
 			return new Response(JSON.stringify({ success: false, error: text }), {
 				status: 500,
-				headers: { "Content-Type": "application/json" }
+				headers: standardHeaders
 			});
 		}
 
@@ -416,7 +470,7 @@ export default {
 			});
 			return new Response(await resp.text(), {
 				status: resp.status,
-				headers: { "Content-Type": "application/json" }
+				headers: standardHeaders
 			});
 		}
 
@@ -427,7 +481,7 @@ export default {
 			const resp = await stub.fetch("http://do/chunking-stats");
 			return new Response(await resp.text(), {
 				status: resp.status,
-				headers: { "Content-Type": "application/json" }
+				headers: standardHeaders
 			});
 		}
 
@@ -438,13 +492,13 @@ export default {
 			const resp = await stub.fetch("http://do/chunking-analysis");
 			return new Response(await resp.text(), {
 				status: resp.status,
-				headers: { "Content-Type": "application/json" }
+				headers: standardHeaders
 			});
 		}
 
 		return new Response(
 			`${API_CONFIG.name} - Available on /sse endpoint`,
-			{ status: 404, headers: { "Content-Type": "text/plain" } }
+			{ status: 404, headers: { "Content-Type": "text/plain", "MCP-Protocol-Version": "2025-06-18" } }
 		);
 	},
 };
