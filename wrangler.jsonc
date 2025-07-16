@@ -1,36 +1,46 @@
 /**
- * For more details on how to configure Wrangler, refer to:
+ * Wrangler configuration
  * https://developers.cloudflare.com/workers/wrangler/configuration/
  */
 {
-	"$schema": "node_modules/wrangler/config-schema.json",
-	"name": "dgidb-mcp-server",
-	"main": "src/index.ts",
-	"compatibility_date": "2025-03-10",
-	"compatibility_flags": ["nodejs_compat"],
-	"migrations": [
-		{
-			"new_sqlite_classes": ["MyMCP"],
-			"tag": "v1"
-		},
-		{
-			"tag": "v2-json-to-sql-do",
-			"new_sqlite_classes": ["JsonToSqlDO"]
-		}
-	],
-	"durable_objects": {
-		"bindings": [
-			{
-				"class_name": "MyMCP",
-				"name": "MCP_OBJECT"
-			},
-			{
-				"name": "JSON_TO_SQL_DO",
-				"class_name": "JsonToSqlDO"
-			}
-		]
-	},
-	"observability": {
-		"enabled": true
-	}
+  "$schema": "node_modules/wrangler/config-schema.json",
+
+  /* --------------------------------------------------
+     Basic metadata
+  -------------------------------------------------- */
+  "name": "dgidb-mcp-server",
+  "main": "src/index.ts",
+
+  /* --------------------------------------------------
+     Runtime compatibility
+  -------------------------------------------------- */
+  "compatibility_date": "2025-03-10",
+  "compatibility_flags": ["nodejs_compat"],
+
+  /* --------------------------------------------------
+     Durable Objects
+  -------------------------------------------------- */
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "MCP_OBJECT",   // must match what the SDK expects
+        "class_name": "DgidbMCP"  // the class you export in index.ts
+      }
+    ]
+  },
+
+  /* --------------------------------------------------
+     Migrations – first tag that introduces DgidbMCP
+     (add another tag later if you change storage shape)
+  -------------------------------------------------- */
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["DgidbMCP"] }
+  ],
+
+  /* --------------------------------------------------
+     Cloudflare observability (optional)
+  -------------------------------------------------- */
+  "observability": { "enabled": true }
 }
+
+
